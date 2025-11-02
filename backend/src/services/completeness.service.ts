@@ -68,10 +68,22 @@ export async function calculateImagesCompleteness(userId: string): Promise<Compl
  */
 export async function calculateAchievementsCompleteness(userId: string): Promise<CompletenessScore> {
   try {
+    // Get achievements via work_experiences (achievements don't have user_id directly)
+    const { data: workExps } = await supabase
+      .from('work_experiences')
+      .select('id')
+      .eq('user_id', userId);
+
+    if (!workExps || workExps.length === 0) {
+      return { section: 'achievements', score: 0, strategy: 'template', missingFields: ['work_experiences'] };
+    }
+
+    const workExpIds = workExps.map((we) => we.id);
+
     const { data: achievements } = await supabase
       .from('achievements')
-      .select('id, raw_text, metric_value, metric_unit, impact_statement')
-      .eq('user_id', userId);
+      .select('id, raw_text, metric_value_numeric, metric_unit, impact_statement')
+      .in('work_experience_id', workExpIds);
 
     if (!achievements || achievements.length === 0) {
       return { section: 'achievements', score: 0, strategy: 'template', missingFields: ['achievements'] };
@@ -85,7 +97,7 @@ export async function calculateAchievementsCompleteness(userId: string): Promise
     const targetCount = 6;
     const countScore = Math.min(achievements.length / targetCount, 1.0);
     
-    const withMetrics = achievements.filter((a) => a.metric_value && a.metric_unit).length;
+    const withMetrics = achievements.filter((a) => a.metric_value_numeric && a.metric_unit).length;
     const metricsScore = achievements.length > 0 ? withMetrics / achievements.length : 0;
     
     const withImpact = achievements.filter((a) => a.impact_statement).length;
@@ -117,24 +129,26 @@ export async function calculateAchievementsCompleteness(userId: string): Promise
  */
 export async function calculateLogosCompleteness(userId: string): Promise<CompletenessScore> {
   try {
-    const { data: companies } = await supabase
-      .from('companies')
-      .select('id, name')
+    // Get companies the user has worked at (via work_experiences)
+    const { data: exps } = await supabase
+      .from('work_experiences')
+      .select('company_id')
       .eq('user_id', userId);
 
-    if (!companies || companies.length === 0) {
+    const companyIds = [...new Set((exps || []).map((e) => e.company_id).filter(Boolean))];
+
+    if (companyIds.length === 0) {
       return { section: 'logos', score: 0, strategy: 'hide', missingFields: ['companies'] };
     }
 
     // Check how many have logo assets
-    const { data: assets } = await supabase
+    const { data: logoLinks } = await supabase
       .from('company_assets')
       .select('company_id')
-      .eq('user_id', userId)
-      .eq('asset_type', 'logo');
+      .in('company_id', companyIds);
 
-    const withLogos = assets?.length || 0;
-    const score = withLogos / companies.length;
+    const withLogos = new Set((logoLinks || []).map((l) => l.company_id));
+    const score = withLogos.size / companyIds.length;
     const strategy = determineStrategy(score);
 
     const missingFields = score < 1.0 ? ['logos'] : [];

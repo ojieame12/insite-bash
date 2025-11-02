@@ -8,6 +8,7 @@ import authRoutes from './api/routes/auth.routes';
 import userRoutes from './api/routes/user.routes';
 import documentRoutes from './api/routes/document.routes';
 import pipelineRoutes from './api/routes/pipeline.routes';
+import careerGraphRoutes from './api/routes/career-graph.routes';
 
 // Load environment variables
 dotenv.config();
@@ -42,6 +43,7 @@ app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/users', userRoutes);
 app.use('/api/v1/documents', documentRoutes);
 app.use('/api/v1/pipeline-runs', pipelineRoutes);
+app.use('/api/v1/career-graph', careerGraphRoutes);
 
 // ============================================================================
 // ERROR HANDLING

@@ -21,10 +21,12 @@ export async function runStoryPipeline(userId: string): Promise<void> {
       .eq('user_id', userId)
       .order('start_date', { ascending: false });
 
+    // Get achievements via work_experiences
+    const workExpIds = workExperiences.map((we) => we.id);
     const { data: achievements } = await supabase
       .from('achievements')
       .select('*')
-      .eq('user_id', userId)
+      .in('work_experience_id', workExpIds)
       .order('created_at', { ascending: false })
       .limit(6);
 
@@ -34,7 +36,7 @@ export async function runStoryPipeline(userId: string): Promise<void> {
     }
 
     // Determine user role from most recent position
-    const currentRole = workExperiences[0]?.role_title || 'Professional';
+    const currentRole = workExperiences[0]?.title || 'Professional';
     const industry = determineIndustry(workExperiences);
 
     // Generate story opener

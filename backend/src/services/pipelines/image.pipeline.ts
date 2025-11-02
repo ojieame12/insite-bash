@@ -332,24 +332,29 @@ async function getOrCreateSiteVersion(userId: string): Promise<string> {
     .from('site_versions')
     .select('id')
     .eq('user_id', userId)
-    .order('version_number', { ascending: false })
+    .order('created_at', { ascending: false })
     .limit(1)
-    .single();
+    .maybeSingle();
 
   if (existing) {
     return existing.id;
   }
 
-  // Create new site version
-  const { data: newVersion } = await supabase
+  // Create new site version with required career_graph_snapshot
+  const { data: newVersion, error } = await supabase
     .from('site_versions')
     .insert({
       user_id: userId,
-      version_number: 1,
-      status: 'draft',
+      career_graph_snapshot: {}, // Required by schema
+      build_status: 'draft',
     })
     .select()
     .single();
+
+  if (error) {
+    logger.error('Failed to create site version', { error, userId });
+    throw error;
+  }
 
   return newVersion!.id;
 }
