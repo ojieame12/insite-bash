@@ -4,7 +4,7 @@ import pdf from 'pdf-parse';
 import mammoth from 'mammoth';
 import axios from 'axios';
 import { IngestPipelineInput, IngestPipelineOutput } from '../../../../shared/types';
-import { structureResumeContent } from '../llm/openai.service';
+import { parseResumeWithLlamaIndex } from '../llm/llamaindex.service';
 
 /**
  * Run ingestion pipeline
@@ -63,20 +63,20 @@ export async function runIngestPipeline(userId: string, documentId: string): Pro
       textLength: extractedText.length,
     });
 
-    // Structure the content using LLM
-    const structured = await structureResumeContent(extractedText);
+      // Structure content with LlamaIndex (free structured extraction)
+    const structured = await parseResumeWithLlamaIndex(extractedText);
 
     // Save work experiences
     let workExperiencesCreated = 0;
-    if (structured.workExperiences && structured.workExperiences.length > 0) {
-      for (const exp of structured.workExperiences) {
+    if (structured.work_experiences && structured.work_experiences.length > 0) {
+      for (const exp of structured.work_experiences) {
         const { error } = await supabase.from('work_experiences').insert({
           user_id: userId,
-          company_name: exp.company,
-          role_title: exp.title,
-          start_date: exp.startDate,
-          end_date: exp.endDate,
-          is_current: exp.isCurrent || false,
+          company_name: exp.company_name,
+          role_title: exp.role_title,
+          start_date: exp.start_date,
+          end_date: exp.end_date,
+          is_current: exp.is_current || false,
           description: exp.description,
         });
 
@@ -90,13 +90,14 @@ export async function runIngestPipeline(userId: string, documentId: string): Pro
       for (const achievement of structured.achievements) {
         const { error } = await supabase.from('achievements').insert({
           user_id: userId,
-          raw_text: achievement.text,
-          metric_value: achievement.metricValue,
-          metric_unit: achievement.metricUnit,
+          raw_text: achievement.raw_text,
+          metric_value: achievement.metric_value,
+          metric_unit: achievement.metric_unit,
           scope: achievement.scope,
+          evidence_strength: achievement.evidence_strength,
           provenance: 'user_provided',
           confidence: 1.0,
-          requires_review: !achievement.metricValue, // Review if no metrics
+          requires_review: !achievement.metric_value, // Review if no metrics
         });
 
         if (!error) achievementsCreated++;
@@ -109,9 +110,9 @@ export async function runIngestPipeline(userId: string, documentId: string): Pro
       for (const skill of structured.skills) {
         const { error } = await supabase.from('skills').insert({
           user_id: userId,
-          skill_name: skill.name,
+          skill_name: skill.skill_name,
           category: skill.category || 'general',
-          proficiency: skill.proficiency || 'intermediate',
+          proficiency_level: skill.proficiency_level || 'intermediate',
         });
 
         if (!error) skillsCreated++;
