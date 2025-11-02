@@ -34,114 +34,112 @@ interface ParsedResume {
 }
 
 /**
- * Parse resume using LlamaParse from LlamaCloud
- * This is the official LlamaIndex cloud parsing service
- * Handles PDF, DOCX, and other document formats automatically
+ * Parse and structure resume using LlamaParse with JSON mode
+ * LlamaParse handles BOTH parsing AND structuring in one API call
+ * No need for separate OpenAI calls!
  */
 export async function parseResumeWithLlamaParse(
   filePath: string
 ): Promise<ParsedResume> {
   try {
-    logger.info('Starting LlamaParse resume parsing', { filePath });
+    logger.info('Starting LlamaParse resume parsing with JSON mode', { filePath });
 
-    // Initialize LlamaParse reader with API key
+    // Initialize LlamaParse with JSON mode and parsing instructions
     const reader = new LlamaParseReader({
       apiKey: process.env.LLAMA_CLOUD_API_KEY!,
-      resultType: 'markdown', // Get structured markdown output
+      resultType: 'json', // Request structured JSON output
       language: 'en',
+      parsingInstructions: `Extract structured resume data in JSON format with these exact fields:
+
+{
+  "work_experiences": [
+    {
+      "company_name": "string",
+      "role_title": "string", 
+      "start_date": "YYYY-MM",
+      "end_date": "YYYY-MM or null if current",
+      "description": "brief summary",
+      "is_current": boolean
+    }
+  ],
+  "achievements": [
+    {
+      "raw_text": "original achievement text",
+      "metric_value": number or null,
+      "metric_unit": "users/revenue/% or null",
+      "scope": "company/team/project name",
+      "evidence_strength": "strong/medium/weak"
+    }
+  ],
+  "skills": [
+    {
+      "skill_name": "string",
+      "category": "technical/soft/language/tool",
+      "proficiency_level": "expert/advanced/intermediate/beginner or null"
+    }
+  ]
+}
+
+Extract ALL work experiences, achievements (especially those with metrics), and skills.
+For evidence_strength: "strong" if has metrics, "medium" if has context, "weak" otherwise.`,
     });
 
-    // Parse the document
+    // Parse the document - LlamaParse returns structured JSON directly!
     const documents = await reader.loadData(filePath);
 
     if (!documents || documents.length === 0) {
       throw new Error('No content extracted from document');
     }
 
-    // Get the parsed text (LlamaParse returns structured markdown)
-    const rawText = documents.map((doc) => doc.text).join('\n\n');
+    // Get the structured data
+    const firstDoc = documents[0];
+    let structured: any;
 
-    logger.info('LlamaParse extraction complete', {
-      textLength: rawText.length,
-      documentCount: documents.length,
-    });
-
-    // Now use LLM to structure the parsed content
-    const structured = await structureResumeFromText(rawText);
-
-    return {
-      ...structured,
-      raw_text: rawText,
-    };
-  } catch (error: any) {
-    logger.error('LlamaParse failed', { error: error.message });
-    throw new Error(`Resume parsing failed: ${error.message}`);
-  }
-}
-
-/**
- * Structure the parsed resume text into database-ready format
- * Uses OpenAI to extract structured data from LlamaParse output
- */
-async function structureResumeFromText(text: string): Promise<Omit<ParsedResume, 'raw_text'>> {
-  const { OpenAI } = await import('openai');
-  
-  const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-  });
-
-  try {
-    const prompt = `Extract structured information from this resume in JSON format.
-
-Resume:
-${text}
-
-Extract:
-1. work_experiences: Array of jobs with company_name, role_title, start_date (YYYY-MM), end_date (YYYY-MM or null), description, is_current (boolean)
-2. achievements: Array with raw_text, metric_value (number or null), metric_unit (string or null), scope (company/project), evidence_strength ("strong"/"medium"/"weak")
-3. skills: Array with skill_name, category ("technical"/"soft"/"language"/"tool"), proficiency_level ("expert"/"advanced"/"intermediate"/"beginner" or null)
-
-Return ONLY valid JSON with these exact field names.`;
-
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4-turbo-preview',
-      messages: [
-        {
-          role: 'system',
-          content: 'You are an expert at extracting structured data from resumes. Return only valid JSON.',
-        },
-        { role: 'user', content: prompt },
-      ],
-      response_format: { type: 'json_object' },
-      temperature: 0.3,
-    });
-
-    const content = response.choices[0].message.content || '{}';
-    const parsed = JSON.parse(content);
+    // LlamaParse returns JSON in the text field when resultType is 'json'
+    try {
+      structured = typeof firstDoc.text === 'string' 
+        ? JSON.parse(firstDoc.text)
+        : firstDoc.text;
+    } catch (parseError) {
+      logger.error('Failed to parse LlamaParse JSON output', { parseError });
+      // Fallback: try to extract JSON from the text
+      const jsonMatch = firstDoc.text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        structured = JSON.parse(jsonMatch[0]);
+      } else {
+        throw new Error('Could not extract structured data from LlamaParse output');
+      }
+    }
 
     // Extract unique company names
     const companies = [
       ...new Set(
-        (parsed.work_experiences || []).map((exp: WorkExperience) => exp.company_name)
+        (structured.work_experiences || []).map((exp: WorkExperience) => exp.company_name)
       ),
     ];
 
-    logger.info('Resume structuring complete', {
-      workExperiences: parsed.work_experiences?.length || 0,
-      achievements: parsed.achievements?.length || 0,
-      skills: parsed.skills?.length || 0,
+    // Get raw text for storage (combine all documents)
+    const rawText = documents.map((doc) => 
+      typeof doc.text === 'string' ? doc.text : JSON.stringify(doc.text)
+    ).join('\n\n');
+
+    logger.info('LlamaParse extraction complete', {
+      workExperiences: structured.work_experiences?.length || 0,
+      achievements: structured.achievements?.length || 0,
+      skills: structured.skills?.length || 0,
       companies: companies.length,
     });
 
     return {
-      work_experiences: parsed.work_experiences || [],
-      achievements: parsed.achievements || [],
-      skills: parsed.skills || [],
+      work_experiences: structured.work_experiences || [],
+      achievements: structured.achievements || [],
+      skills: structured.skills || [],
       companies,
+      raw_text: rawText,
     };
   } catch (error: any) {
-    logger.error('Resume structuring failed', { error: error.message });
-    throw error;
+    logger.error('LlamaParse failed', { error: error.message, stack: error.stack });
+    throw new Error(`Resume parsing failed: ${error.message}`);
   }
 }
 
