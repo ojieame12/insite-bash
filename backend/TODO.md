@@ -1,9 +1,10 @@
 # Backend TODO
 
 ## Current Sprint
-- [x] Replace OpenAI resume parsing with LlamaIndex
-  - [x] Install llamaindex and dependencies
-  - [x] Create LlamaIndex service for structured extraction
-  - [x] Update ingestion pipeline to use LlamaIndex
-  - [ ] Test with sample resumes (pending user testing)
-  - [x] Update .env.example with LlamaIndex config
+- [x] Implement LlamaParse from LlamaCloud API (CORRECT approach)
+  - [x] Install @llamaindex/cloud (LlamaParse SDK)
+  - [x] Create LlamaParse service using cloud.llamaindex.ai API
+  - [x] Replace pdf-parse and mammoth with LlamaParse
+  - [x] Add LLAMA_CLOUD_API_KEY to .env
+  - [ ] Test with real resumes (pending API key)
+  - [x] Update documentation

@@ -1,10 +1,9 @@
 import { supabase } from '../../config/supabase';
 import { logger } from '../../utils/logger';
-import pdf from 'pdf-parse';
-import mammoth from 'mammoth';
+// Removed pdf-parse and mammoth - now using LlamaParse
 import axios from 'axios';
 import { IngestPipelineInput, IngestPipelineOutput } from '../../../../shared/types';
-import { parseResumeWithLlamaIndex } from '../llm/llamaindex.service';
+import { parseResumeFromBuffer } from '../llm/llamaparse.service';
 
 /**
  * Run ingestion pipeline
@@ -32,39 +31,22 @@ export async function runIngestPipeline(userId: string, documentId: string): Pro
       timeout: 30000,
     });
 
-    const buffer = Buffer.from(response.data);
+      const buffer = Buffer.from(response.data);
 
-    // Extract text based on document type
-    let extractedText = '';
-    if (document.type === 'resume_pdf' || document.file_name?.endsWith('.pdf')) {
-      const pdfData = await pdf(buffer);
-      extractedText = pdfData.text;
-    } else if (document.type === 'resume_docx' || document.file_name?.endsWith('.docx')) {
-      const result = await mammoth.extractRawText({ buffer });
-      extractedText = result.value;
-    } else {
-      // Try PDF by default
-      try {
-        const pdfData = await pdf(buffer);
-        extractedText = pdfData.text;
-      } catch {
-        throw new Error('Unsupported document format');
-      }
-    }
+    // Parse resume with LlamaParse (handles PDF, DOCX, etc. automatically)
+    logger.info('Parsing resume with LlamaParse', { userId, documentId });
+    const structured = await parseResumeFromBuffer(buffer, document.file_name || 'resume.pdf');
 
-    // Save extracted text
+    // Update document with extracted text
     await supabase
       .from('documents')
-      .update({ text_extracted: extractedText })
+      .update({ extracted_text: structured.raw_text })
       .eq('id', documentId);
 
-    logger.info('Text extracted, now structuring content', {
+    logger.info('LlamaParse completed', {
       userId,
-      textLength: extractedText.length,
+      textLength: structured.raw_text.length,
     });
-
-      // Structure content with LlamaIndex (free structured extraction)
-    const structured = await parseResumeWithLlamaIndex(extractedText);
 
     // Save work experiences
     let workExperiencesCreated = 0;
