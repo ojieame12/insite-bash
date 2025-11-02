@@ -258,3 +258,72 @@ Return only the enhanced statement, no explanation.`;
     return rawText; // Return original on error
   }
 }
+
+/**
+ * Generate skill offers - Transform skills into client-ready offerings
+ */
+export async function generateSkillOffers(
+  category: string,
+  skillNames: string[],
+  achievements: any[]
+): Promise<Array<{
+  skillName: string;
+  offerStatement: string;
+  proofPoints: string[];
+}>> {
+  try {
+    const prompt = `Transform these ${category} skills into client-ready service offerings.
+
+Skills: ${skillNames.join(', ')}
+
+Related achievements:
+${achievements.map((a) => a.impact_statement || a.raw_text).join('\n')}
+
+For each skill, create:
+1. offerStatement: A compelling 1-sentence description of what you can deliver (client-focused, not skill-focused)
+2. proofPoints: 2-3 specific examples or metrics from the achievements that prove this capability
+
+Example format:
+{
+  "offers": [
+    {
+      "skillName": "React",
+      "offerStatement": "Build scalable web applications that handle millions of users with modern, maintainable code",
+      "proofPoints": [
+        "Rebuilt platform serving 2M+ users with 40% faster load times",
+        "Reduced bug reports by 60% through component testing"
+      ]
+    }
+  ]
+}
+
+Return ONLY valid JSON.`;
+
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4-turbo-preview',
+      messages: [
+        {
+          role: 'system',
+          content: 'You are an expert at translating technical skills into business value propositions.',
+        },
+        { role: 'user', content: prompt },
+      ],
+      max_tokens: 1000,
+      temperature: 0.6,
+      response_format: { type: 'json_object' },
+    });
+
+    const content = response.choices[0].message.content?.trim() || '{}';
+    const parsed = JSON.parse(content);
+
+    return parsed.offers || [];
+  } catch (error) {
+    logger.error('Failed to generate skill offers:', error);
+    // Return basic offers on error
+    return skillNames.map((skillName) => ({
+      skillName,
+      offerStatement: `Expertise in ${skillName}`,
+      proofPoints: [],
+    }));
+  }
+}

@@ -7,6 +7,8 @@ import { runLogoPipeline } from '../services/pipelines/logo.pipeline';
 import { generateProfessionalImages } from '../services/pipelines/image.pipeline';
 import { runAchievementsPipeline } from '../services/pipelines/achievements.pipeline';
 import { calculateAllCompleteness } from '../services/completeness.service';
+import { runStoryPipeline } from '../services/pipelines/story.pipeline';
+import { runSkillsPipeline } from '../services/pipelines/skills.pipeline';
 
 async function updatePipelineStatus(
   userId: string,
@@ -147,8 +149,7 @@ pipelineQueue.process('story', async (job: Job<PipelineJobData>) => {
   await updatePipelineStatus(userId, 'story', 'running');
 
   try {
-    // TODO: Implement story generation
-    // This will be implemented in the next phase
+    await runStoryPipeline(userId);
     await updatePipelineStatus(userId, 'story', 'succeeded');
     
     logger.info(`Story pipeline completed`, { userId });
@@ -166,8 +167,7 @@ pipelineQueue.process('skills', async (job: Job<PipelineJobData>) => {
   await updatePipelineStatus(userId, 'skills', 'running');
 
   try {
-    // TODO: Implement skills extraction
-    // This will be implemented in the next phase
+    await runSkillsPipeline(userId);
     await updatePipelineStatus(userId, 'skills', 'succeeded');
     
     logger.info(`Skills pipeline completed`, { userId });
