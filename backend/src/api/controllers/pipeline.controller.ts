@@ -3,6 +3,8 @@ import { supabase } from '../../config/supabase';
 import { AppError } from '../middleware/errorHandler';
 import { AuthRequest } from '../middleware/auth';
 import { PipelineRun } from '../../../../shared/types';
+import { queueFullPipeline, queuePipelineStep } from '../../queues/pipeline.queue';
+import { logger } from '../../utils/logger';
 
 export const getPipelineRun = async (
   req: AuthRequest,
@@ -80,3 +82,108 @@ export const getPipelineRuns = async (
     next(error);
   }
 };
+
+/**
+ * Start pipeline execution
+ * POST /pipelines/run
+ */
+export const runPipeline = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const userId = req.userId!;
+    const { steps, documentId, siteVersionId } = req.body;
+
+    logger.info('Starting pipeline execution', {
+      userId,
+      steps: steps || 'all',
+      documentId,
+    });
+
+    let jobIds: string[];
+
+    if (steps && Array.isArray(steps)) {
+      // Queue specific steps
+      jobIds = [];
+      for (const step of steps) {
+        const jobId = await queuePipelineStep({
+          userId,
+          documentId,
+          siteVersionId,
+          step,
+        });
+        jobIds.push(jobId);
+      }
+    } else {
+      // Queue full pipeline\n      if (!documentId) {
+        throw new AppError('documentId is required for full pipeline', 400);
+      }
+      jobIds = await queueFullPipeline(userId, documentId, siteVersionId);
+    }
+
+    res.status(202).json({
+      message: 'Pipeline queued successfully',
+      jobIds,
+      status: 'queued',
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Get pipeline status for user
+ * Returns current status of all pipeline steps
+ */
+export const getPipelineStatus = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const userId = req.userId!;
+
+    // Get latest status for each pipeline step
+    const { data, error } = await supabase
+      .from('pipeline_runs')
+      .select('pipeline_name, status, error_message, started_at, completed_at')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    // Group by pipeline_name and get latest
+    const statusMap = new Map();
+    data?.forEach((run) => {
+      if (!statusMap.has(run.pipeline_name)) {
+        statusMap.set(run.pipeline_name, run);
+      }
+    });
+
+    const statuses = Array.from(statusMap.values());
+
+    res.json({
+      userId,
+      pipelines: statuses,
+      overall: calculateOverallStatus(statuses),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+function calculateOverallStatus(pipelines: any[]): string {
+  if (pipelines.length === 0) return 'not_started';
+  
+  const hasRunning = pipelines.some((p) => p.status === 'running');
+  const hasFailed = pipelines.some((p) => p.status === 'failed');
+  const allSucceeded = pipelines.every((p) => p.status === 'succeeded');
+
+  if (hasRunning) return 'running';
+  if (hasFailed) return 'failed';
+  if (allSucceeded) return 'completed';
+  
+  return 'pending';
+}
