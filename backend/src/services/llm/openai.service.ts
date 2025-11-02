@@ -147,3 +147,114 @@ export async function rankAchievements(
     return achievements; // Return original order on error
   }
 }
+
+/**
+ * Structure resume content into work experiences, achievements, and skills
+ */
+export async function structureResumeContent(resumeText: string): Promise<{
+  workExperiences: Array<{
+    company: string;
+    title: string;
+    startDate: string;
+    endDate?: string;
+    isCurrent: boolean;
+    description?: string;
+  }>;
+  achievements: Array<{
+    text: string;
+    metricValue?: number;
+    metricUnit?: string;
+    scope?: string;
+  }>;
+  skills: Array<{
+    name: string;
+    category?: string;
+    proficiency?: string;
+  }>;
+}> {
+  try {
+    const prompt = `Extract structured information from this resume text.
+
+Resume:
+${resumeText}
+
+Extract and return a JSON object with:
+1. workExperiences: array of jobs with company, title, startDate (YYYY-MM), endDate (YYYY-MM or null if current), isCurrent (boolean), description
+2. achievements: array of accomplishments with text, metricValue (number if quantified), metricUnit (e.g., "percent", "million", "users"), scope (e.g., "company-wide", "team")
+3. skills: array of skills with name, category (e.g., "technical", "leadership"), proficiency (e.g., "expert", "intermediate")
+
+Focus on extracting quantified achievements with specific metrics. Be precise with dates and numbers.
+
+Return ONLY valid JSON, no additional text.`;
+
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4-turbo-preview',
+      messages: [
+        {
+          role: 'system',
+          content: 'You are an expert resume parser. Extract structured data accurately and return only valid JSON.',
+        },
+        { role: 'user', content: prompt },
+      ],
+      max_tokens: 2000,
+      temperature: 0.1, // Low temperature for accuracy
+      response_format: { type: 'json_object' },
+    });
+
+    const content = response.choices[0].message.content?.trim() || '{}';
+    const structured = JSON.parse(content);
+
+    return {
+      workExperiences: structured.workExperiences || [],
+      achievements: structured.achievements || [],
+      skills: structured.skills || [],
+    };
+  } catch (error) {
+    logger.error('Failed to structure resume content:', error);
+    // Return empty structure on error
+    return {
+      workExperiences: [],
+      achievements: [],
+      skills: [],
+    };
+  }
+}
+
+/**
+ * Generate enhanced impact statement for achievement
+ * Preserves numeric metrics while improving clarity
+ */
+export async function generateImpactStatement(rawText: string): Promise<string> {
+  try {
+    const prompt = `Enhance this achievement statement while preserving all numeric metrics exactly as written.
+
+Original: ${rawText}
+
+Rules:
+1. Keep all numbers, percentages, and metrics EXACTLY as they appear
+2. Improve clarity and professional tone
+3. Use action verbs (led, implemented, increased, reduced, etc.)
+4. Make it concise (max 2 sentences)
+5. Focus on business impact
+
+Return only the enhanced statement, no explanation.`;
+
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4-turbo-preview',
+      messages: [
+        {
+          role: 'system',
+          content: 'You are an expert at writing professional achievement statements. Always preserve exact numeric values.',
+        },
+        { role: 'user', content: prompt },
+      ],
+      max_tokens: 150,
+      temperature: 0.5,
+    });
+
+    return response.choices[0].message.content?.trim() || rawText;
+  } catch (error) {
+    logger.error('Failed to generate impact statement:', error);
+    return rawText; // Return original on error
+  }
+}

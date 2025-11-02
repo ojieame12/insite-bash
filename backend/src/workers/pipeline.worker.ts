@@ -6,6 +6,7 @@ import { runIngestPipeline } from '../services/pipelines/ingest.pipeline';
 import { runLogoPipeline } from '../services/pipelines/logo.pipeline';
 import { generateProfessionalImages } from '../services/pipelines/image.pipeline';
 import { runAchievementsPipeline } from '../services/pipelines/achievements.pipeline';
+import { calculateAllCompleteness } from '../services/completeness.service';
 
 async function updatePipelineStatus(
   userId: string,
@@ -172,6 +173,21 @@ pipelineQueue.process('skills', async (job: Job<PipelineJobData>) => {
     logger.info(`Skills pipeline completed`, { userId });
   } catch (error: any) {
     await updatePipelineStatus(userId, 'skills', 'failed', error.message);
+    throw error;
+  }
+});
+
+// Process completeness calculation after all pipelines
+pipelineQueue.process('completeness', async (job: Job<PipelineJobData>) => {
+  const { userId } = job.data;
+  
+  logger.info(`Calculating completeness scores`, { userId });
+
+  try {
+    await calculateAllCompleteness(userId);
+    logger.info(`Completeness calculation completed`, { userId });
+  } catch (error: any) {
+    logger.error(`Completeness calculation failed`, { userId, error: error.message });
     throw error;
   }
 });

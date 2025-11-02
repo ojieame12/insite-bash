@@ -22,9 +22,9 @@ export const pipelineQueue = new Queue('pipeline', {
 
 export interface PipelineJobData {
   userId: string;
-  siteVersionId?: string;
   documentId?: string;
-  step: 'ingest' | 'logos' | 'images' | 'achievements' | 'story' | 'skills';
+  siteVersionId?: string;
+  step: 'ingest' | 'logos' | 'achievements' | 'story' | 'skills' | 'images' | 'completeness';
   metadata?: Record<string, any>;
 }
 
@@ -80,6 +80,7 @@ export async function queueFullPipeline(
     'story',
     'skills',
     'images',
+    'completeness', // Calculate completeness after all pipelines
   ];
 
   const jobIds: string[] = [];
